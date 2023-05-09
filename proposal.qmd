@@ -1,0 +1,124 @@
+---
+title: "Project Proposal"
+author: "AJ Biffl"
+format: pdf
+editor: visual
+---
+
+```{r}
+#| echo: false
+#| output: false
+
+library(readxl)
+library(ggplot2)
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+explainers <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, explainers, response)])
+
+# convert string entries to lowercase (for consistency)
+for (x in explainers) {
+  if (class(df[[x]]) == "character") {
+    df[[x]] <- tolower(df[[x]])
+  }
+}
+
+
+```
+
+## What research question(s) do you hope to answer?
+
+What are the strongest determinants of life expectancy in small- to medium-sized cities?
+
+## From where did you obtain the data you will use to answer your research question?
+
+Data taken from the [Urban Data Catalog](https://datacatalog.urban.org/dataset/72-small-and-medium-size-cities-built-environment-and-health-equity-dataset)
+
+## How many observations does your data set have?
+
+52 after cleaning
+
+## Are you merging multiple data sets?
+
+No
+
+## Provide a table listing each variable you are considering for analysis, briefly describe each variable (e.g., the number of disease cases in each region), and the variable type (e.g., numeric, factor, date, etc.).
+
+| Variable                         | Variable Type  | Description                                                                                                          |
+|----------------------------------|----------------|----------------------------------------------------------------------------------------------------------------------|
+| City Type                        | Categorical    | Type of city, whether center city, suburban city, or small rural                                                     |
+| City Population                  | Numeric (int)  | Population of city in 2018 in US Census data                                                                         |
+| Population Trend                 | Categorical    | Whether the city is losing population, growing, or plateau(ing) (defined by comparing 2013 and 2018 populations)     |
+| Share Below 100% of the FPL      | Numeric (real) | Percent of population below the federal poverty line                                                                 |
+| Total Unemployment (%)           | Numeric (real) | Unemployment rate (percent)                                                                                          |
+| Percent renter                   | Numeric (real) | Percent renter-occupied housing                                                                                      |
+| Housing with potential lead risk | Numeric (real) | Percent of houses where construction materials potentially might include lead                                        |
+| Park Access                      | Numeric (real) | Percentage of population living within a ten minute walk of "green space"                                            |
+| Walkability Score                | Numeric (real) | Average number of neighborhood amenities accessible by walking                                                       |
+| Limited Access to Healthy Foods  | Numeric (real) | Percent of population living more than half a mile from the nearest supermarket, supercenter, or large grocery store |
+| Air pollution                    | Numeric (real) | Average daily concentration of fine particle matter per cubic meter                                                  |
+| Drinking water violations        | Numeric (int)  | Number of health code violations involving lead in drinking water pipes                                              |
+
+## What will your response variable be for answering the research question(s)?
+
+Life expectancy - the average life expectancy (in years) at birth
+
+## Provide a numeric summary of your response variable.
+
+Mean and standard deviation of average lifetimes:
+
+```{r}
+#| echo: false
+
+print(mean(df[[response]]))
+print(sd(df[[response]]))
+```
+
+## Provide a visual summary of your response variable (histogram if discrete, density plot if continuous.)
+
+```{r}
+#| echo: false
+
+den_lifetimes <- density(df[[response]])
+
+plot(den_lifetimes, main = "distribution of lifetimes", 
+     xlab = "lifetime", ylab = "density")
+```
+
+## Provide an appropriate graphical summary for each predictor variable.
+
+```{r}
+#| echo: false
+
+for (x in explainers) {
+  
+  if (class(df[[x]]) == "character") {
+    
+    barplot(table(df[x]), main = x)
+    
+    
+  } else {
+    d <- density(df[[x]])
+    plot(d, xlab = x, ylab = 'density', main = '')
+  }
+}
+
+```

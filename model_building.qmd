@@ -1,0 +1,296 @@
+---
+title: "model builder"
+format: pdf
+editor: source
+---
+
+Building a model one parameter at a time (greedy search) (no rescaling)
+
+```{r}
+# City-Scale Indicators of Public Health
+library(ggplot2)
+library(readxl)
+library(rstan)
+library(rstanarm)
+library(loo)
+library(reshape2)
+
+
+
+# options recommended by compiler
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+Read in data
+
+```{r}
+
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+explainers <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+
+continuous_explainers <- c("Total Unemployment (%)", "Share Below 100% of the FPL", "Housing with potential lead risk", "Air pollution", "Limited Access to Healthy Foods", "Park Access", "Percent renter", "Walkability Score", "Drinking water violations", "City Population")
+
+
+k <- length(explainers)
+kcont <- length(continuous_explainers)
+```
+
+```{r}
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, explainers, response)])
+
+
+n <- nrow(df)
+y <- df[[response]]
+```
+
+```{r}
+
+N <- 2e4 # number of iters
+Sig <- 100 # std dev of priors
+
+#fits <- data.frame(matrix(nrow = kcont, ncol = 4), row.names = continuous_explainers, col.names = c("coeff", "Rbsq", "looic", "waic"))
+fits <- data.frame(matrix(nrow = kcont, ncol = 4, dimnames = list(continuous_explainers, c("coeff", "Rbsq", "looic", "waic"))))
+
+explainers_to_test <- continuous_explainers
+
+best_explainers <- c()
+ics_l <- data.frame(matrix(-1, nrow = kcont, ncol = 8, dimnames = list(continuous_explainers, seq(length = 8))))
+ics_w <- data.frame(matrix(-1, nrow = kcont, ncol = 8, dimnames = list(continuous_explainers, seq(length = 8))))
+best_looic <- Inf
+
+for (q in 1:kcont) {
+  # q is the number of variables in the fit
+  
+  fits <- data.frame(matrix(nrow = kcont-q+1, ncol = 4, dimnames = list(explainers_to_test, c("coeff", "Rbsq", "looic", "waic"))))
+  
+  for (i in q:kcont) {
+    
+    expl <- explainers_to_test[i-q+1]
+    print(expl)
+    
+    if (q == 1){
+      
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x, data = data.frame(y = y, x = x), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+    
+    } else if (q == 2) {
+      
+      x1 <- df[[best_explainers[1]]]
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x + x1, data = data.frame(y = y, x = x, x1 = x1), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+    
+    } else if (q == 3) {
+      
+      x1 <- df[[best_explainers[1]]]
+      x2 <- df[[best_explainers[2]]]
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x + x1 + x2, data = data.frame(y = y, x = x, x1 = x1, x2 = x2), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+      
+    } else if (q == 4) {
+      
+      x1 <- df[[best_explainers[1]]]
+      x2 <- df[[best_explainers[2]]]
+      x3 <- df[[best_explainers[3]]]
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x + x1 + x2 + x3, data = data.frame(y = y, x = x, x1 = x1, x2 = x2, x3 = x3), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+      
+    } else if (q == 5) {
+      
+      x1 <- df[[best_explainers[1]]]
+      x2 <- df[[best_explainers[2]]]
+      x3 <- df[[best_explainers[3]]]
+      x4 <- df[[best_explainers[4]]]
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x + x1 + x2 + x3 + x4, data = data.frame(y = y, x = x, x1 = x1, x2 = x2, x3 = x3, x4 = x4), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+      
+    } else if (q == 6) {
+      
+      x1 <- df[[best_explainers[1]]]
+      x2 <- df[[best_explainers[2]]]
+      x3 <- df[[best_explainers[3]]]
+      x4 <- df[[best_explainers[4]]]
+      x5 <- df[[best_explainers[5]]]
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x + x1 + x2 + x3 + x4 + x5, data = data.frame(y = y, x = x, x1 = x1, x2 = x2, x3 = x3, x4 = x4, x5 = x5), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+      
+    } else if (q == 7) {
+      
+      x1 <- df[[best_explainers[1]]]
+      x2 <- df[[best_explainers[2]]]
+      x3 <- df[[best_explainers[3]]]
+      x4 <- df[[best_explainers[4]]]
+      x5 <- df[[best_explainers[5]]]
+      x6 <- df[[best_explainers[6]]]
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x + x1 + x2 + x3 + x4 + x5 + x6, data = data.frame(y = y, x = x, x1 = x1, x2 = x2, x3 = x3, x4 = x4, x5 = x5, x6 = x6), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+      
+    }  else if (q == 8) {
+      
+      x1 <- df[[best_explainers[1]]]
+      x2 <- df[[best_explainers[2]]]
+      x3 <- df[[best_explainers[3]]]
+      x4 <- df[[best_explainers[4]]]
+      x5 <- df[[best_explainers[5]]]
+      x6 <- df[[best_explainers[6]]]
+      x7 <- df[[best_explainers[7]]]
+      x <- df[[expl]]
+      new_fit <- stan_glm(y ~ x + x1 + x2 + x3 + x4 + x5 + x6 + x7, data = data.frame(y = y, x = x, x1 = x1, x2 = x2, x3 = x3, x4 = x4, x5 = x5, x6 = x6, x7 = x7), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+      
+    } else {
+      stop('need more bruh')
+    }
+    
+    fits[expl,'coeff'] <- new_fit$coefficients[[2]]
+    fits[expl, 'Rbsq'] <- 1 - (new_fit$stan_summary[,"mean"][[3]]^2)/var(y)
+    fits[expl, 'looic'] <- loo(new_fit)$estimates[[3]]
+    fits[expl, 'waic'] <- waic(new_fit)$estimates[[3]]
+    
+    ics_l[expl, q] <- fits[expl, 'looic']
+    ics_w[expl, q] <- fits[expl, 'waic']
+    #fits[expl] <- new_fit
+    
+    #print(stan_dens(new_fit, pars = 'x_s') + ggtitle(expl))
+    gc()
+  }
+  
+  print(fits[order(fits['looic']),])
+  
+  best_expl <- row.names(fits)[which.min(fits$looic)]
+  
+  #ics <- c(ics, min(fits$looic))
+  
+  if (min(fits$looic) > best_looic) {
+    break
+  } else {
+    best_looic <- min(fits$looic)
+    
+    best_explainers <- c(best_explainers, best_expl)
+    
+    # remove best_expl
+    explainers_to_test <- explainers_to_test[!explainers_to_test == best_expl]
+  }
+}
+
+```
+
+```{r}
+
+print(best_explainers)
+
+```
+
+```{r}
+
+#save(lin_fit_1000, file = all_fit_file, compress = "xz")
+
+
+save(ics_l, file = "ics_l.rda", compress = "xz")
+save(ics_w, file = "ics_w.rda", compress = "xz")
+
+```
+
+```{r}
+
+#heatmap(ics_l)
+K <- 7
+
+thing = data.frame(matrix(-1, nrow = K*kcont, ncol = 3, dimnames = list(NULL, c("Params", "Variable", "LOOIC"))))
+
+
+z <- 1
+for (i in 1:K) {
+  for (j in 1:kcont) {
+    expl <- continuous_explainers[j]
+    thing[z,'Params'] <- i
+    thing[z,'Variable'] <-expl
+    thing[z,'LOOIC'] <- ics_l[expl, i]
+    z <- z+1
+  }
+}
+
+
+
+
+```
+
+```{r}
+
+vmin <- min(thing[["LOOIC"]][thing["LOOIC"] > 0])
+vmax <- max(thing["LOOIC"])
+
+ggplot(data = thing, aes(Params, Variable, fill = LOOIC)) + geom_tile() + 
+    scale_fill_gradient(high = "#e30909", low = "blue", 
+     limits = c(vmin, vmax), na.value = '#75e081') + 
+      scale_x_continuous(breaks = seq(7)) 
+    #+ 
+    #theme(axis.text.x = element_text(angle = 30, vjust = 1, 
+      #size = 10, hjust = 1))
+
+
+
+```
+
+```{r}
+
+best_explainers
+
+```
+
+```{r}
+
+#heatmap(ics_l)
+K <- 7
+
+thing2 = data.frame(matrix(-1, nrow = K*kcont, ncol = 3, dimnames = list(NULL, c("Params", "Variable", "WAIC"))))
+
+
+z <- 1
+for (i in 1:K) {
+  for (j in 1:kcont) {
+    expl <- continuous_explainers[j]
+    thing2[z,'Params'] <- i
+    thing2[z,'Variable'] <-expl
+    thing2[z,'WAIC'] <- ics_w[expl, i]
+    z <- z+1
+  }
+}
+
+
+
+
+```
+
+```{r}
+
+vmin2 <- min(thing2[["WAIC"]][thing2["WAIC"] > 0])
+vmax2 <- max(thing2["WAIC"])
+
+ggplot(data = thing2, aes(Params, Variable, fill = WAIC)) + geom_tile() + 
+    scale_fill_gradient(high = "#e30909", low = "blue", 
+     limits = c(vmin2, vmax2), na.value = '#75e081') + 
+      scale_x_continuous(breaks = seq(7)) 
+
+
+
+```

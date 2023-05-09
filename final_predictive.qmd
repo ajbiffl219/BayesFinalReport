@@ -1,0 +1,351 @@
+---
+title: "final predictive"
+format: pdf
+editor: source
+---
+
+
+looking at predictive posterior distr for y for final model
+
+```{r}
+# City-Scale Indicators of Public Health
+library(ggplot2)
+library(readxl)
+library(rstan)
+library(loo)
+library(rstanarm)
+library(reshape2)
+library(bayesplot)
+
+# options recommended by compiler
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+Read and clean data
+
+```{r}
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+columns <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+
+explainers <- c("Total Unemployment (%)", "Housing with potential lead risk", 
+                "Air pollution", "Percent renter", "Walkability Score")
+
+```
+
+```{r}
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, columns, response)])
+
+# convert string entries to lowercase (for consistency)
+for (x in columns) {
+  if (class(df[[x]]) == "character") {
+    df[[x]] <- tolower(df[[x]])
+  }
+}
+
+y <- df[[response]]
+n <- nrow(df)
+v <- var(y)
+
+
+X <- rep(1, n)
+
+for (col in explainers) {
+  X <- cbind(X, df[[col]])
+}
+
+```
+
+```{r}
+
+all_fit_file <- "best_fit_4.rda"
+overwrite <- FALSE
+load(file = all_fit_file)
+
+
+```
+
+```{r}
+
+summary(lin_fit, pars = c("beta", "sigmasq"))$summary[,"Rhat"]
+
+```
+
+```{r}
+
+stan_dens(lin_fit, pars = c("beta", "sigmasq"))
+
+
+```
+
+```{r}
+
+
+summary(lin_fit, pars = "beta")$summary[,c("mean", "sd", "2.5%", "97.5%")]
+
+```
+
+
+```{r}
+mean(y)
+explainers
+
+```
+
+```{r}
+
+for (i in 1:length(explainers)) {
+  print(stan_dens(lin_fit, pars = paste("beta[", i+1,"]", sep = "")) + 
+                  ggtitle(explainers[i]))
+}
+
+```
+
+```{r}
+#| warning: false
+
+looic_lin <- loo(extract_log_lik(lin_fit))
+waic_lin <- waic(extract_log_lik(lin_fit))
+
+
+```
+
+```{r}
+# LOOIC
+print(looic_lin$estimates[3])
+```
+
+```{r}
+# WAIC
+print(waic_lin$estimates[3])
+
+```
+
+
+
+```{r}
+
+summary(lin_fit, pars = c("beta", "sigmasq"))$summary[,c("mean", "sd", "2.5%", "97.5%")]
+
+
+```
+
+```{r}
+
+(sigmasq_mean <- summary(lin_fit, pars = "sigmasq")$summary[,"mean"])
+
+```
+
+
+```{r}
+
+stan_dens(lin_fit, pars = "Rbsq")
+
+```
+
+
+```{r}
+
+# indicator variables
+city_types <- c("center city", 'small rural', 'suburban city')
+population_trends <- c("plateau", "growing", "losing population")
+
+# city type (reference level = "center city")
+df['small rural'] <- (df[['City Type']] == "small rural") + 0 # small rural
+df['suburban city'] <- (df[['City Type']] == "suburban city") + 0 # suburban city
+
+
+# population trend (reference level = "plateau")
+df['growing'] <- (df[["Population Trend*"]] == "growing") # growing
+df['shrinking'] <- (df[["Population Trend*"]] == "losing population") # losing population
+
+
+```
+
+```{r}
+
+
+points <- 1 + df[['small rural']] + 2*df[['suburban city']]
+colors <- 1 + df[['growing']] + 2*df[['shrinking']]
+
+
+plot(0,0)
+legend(-0.1,0.5, legend = c(city_types, population_trends), pch = c(1, 2, 3, 1, 1, 1), col = c(1,1,1,1,2,3))
+
+
+```
+
+```{r}
+
+
+
+y <- df[[response]]
+#x <- df[[continuous_explainers[i]]]
+mu <- summary(lin_fit, pars = 'mu')$summary[,"mean"]
+
+
+plot(mu, y, pch = points, col = colors, xlab = "fit lifetime (yr)", ylab = "true lifetime (yr)")
+  
+
+
+```
+
+
+```{r}
+
+hist(y, breaks = 10, main = '', xlab = 'Lifetime (yr)', ylab = 'Counts')
+
+```
+
+
+
+```{r}
+
+nrep <- 200
+yrep <- matrix(0, nrow=nrep, ncol=n)
+
+
+for (i in 1:n) {
+  yrep[,i] <- rnorm(nrep, mean = mu[i], sd = sqrt(sigmasq_mean))
+}
+
+
+```
+
+
+
+
+```{r}
+
+ppc_boxplot(y, yrep[1:10,]) + ylab('lifetime (yr)')
+
+```
+
+
+
+```{r}
+
+ppc_dens_overlay(y, yrep) + xlab('lifetime (yr)')
+
+```
+
+
+
+
+```{r}
+
+# effect plot?
+
+slopes <- c()
+betas <- summary(lin_fit, pars = "beta")$summary[,"mean"][2:6]
+
+ybar <- mean(y)
+
+
+for (i in 1:5) {
+  s <- explainers[[i]]
+  
+  x <- df[[s]]
+  
+  xmax <- max(x)
+  xmin <- min(x)
+  
+  slopes <- c(slopes, betas[[i]]/(xmax - xmin))
+}
+
+```
+
+```{r}
+
+windows.options(width = 10, height = 10)
+
+
+```
+
+
+```{r}
+
+
+dy <- 0.05
+plot(y, y, xlab = "Q", ylab = "lifetime (yr)", xlim = c(-0.5, 0.5), ylim = c(ybar - dy, ybar + dy))
+
+  
+for (i in 1:5) {
+  abline(a = ybar, b = slopes[[i]], col = i)
+}
+
+
+legend(-0.535, 78.273, legend = explainers, col = c(1,2,3,4,5), lwd = 1, pch = NA)
+
+
+
+```
+
+
+
+
+
+```{r}
+
+# effect plot?
+
+slopes2 <- c()
+
+for (i in 1:5) {
+  s <- explainers[[i]]
+  
+  x <- df[[s]]
+  
+  slopes2 <- c(slopes2, betas[[i]]/sd(x))
+}
+
+```
+
+
+
+```{r}
+
+zscale <- 0.5
+dy <- 0.05
+plot(y, y, xlab = "Z", ylab = "lifetime (yr)", xlim = c(-zscale, zscale), ylim = c(ybar - dy, ybar + dy))
+
+  
+for (i in 1:5) {
+  abline(a = ybar, b = slopes2[[i]], col = i)
+}
+
+
+legend(-0.535, 78.273, legend = explainers, col = c(1,2,3,4,5), lwd = 1, pch = NA)
+
+
+
+```
+
+```{r}
+
+print(slopes)
+print(slopes2/4)
+
+```
+
+

@@ -1,0 +1,119 @@
+---
+title: "convergence_rstanarm"
+format: pdf
+editor: source
+---
+
+Checking convergence of rstanarm models used in model builder 2
+
+```{r}
+# City-Scale Indicators of Public Health
+library(ggplot2)
+library(readxl)
+library(rstan)
+library(rstanarm)
+library(loo)
+library(reshape2)
+
+
+
+# options recommended by compiler
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+Read in data
+
+```{r}
+
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+explainers <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+
+continuous_explainers <- c("Total Unemployment (%)", "Share Below 100% of the FPL", "Housing with potential lead risk", "Air pollution", "Limited Access to Healthy Foods", "Park Access", "Percent renter", "Walkability Score", "Drinking water violations", "City Population")
+
+
+k <- length(explainers)
+kcont <- length(continuous_explainers)
+```
+
+```{r}
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, explainers, response)])
+
+
+n <- nrow(df)
+y <- df[[response]]
+```
+
+```{r}
+
+N <- 2e4 # number of iters
+Sig <- 100 # std dev of priors
+
+best_explainers <- continuous_explainers
+
+x1 <- df[[best_explainers[1]]]
+x2 <- df[[best_explainers[2]]]
+x3 <- df[[best_explainers[3]]]
+x4 <- df[[best_explainers[4]]]
+x5 <- df[[best_explainers[5]]]
+x6 <- df[[best_explainers[6]]]
+x7 <- df[[best_explainers[7]]]
+new_fit <- stan_glm(y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7, data = data.frame(y = y, x1 = x1, x2 = x2, x3 = x3, x4 = x4, x5 = x5, x6 = x6, x7 = x7), prior = normal(0,Sig), chains = 4, iter = N, warmup = N/2)
+
+
+```
+
+```{r}
+# launch_shinystan(new_fit, ppd = FALSE)
+
+```
+
+
+```{r}
+
+new_mcmc <- As.mcmc.list(new_fit)
+
+
+
+```
+
+
+```{r}
+# construct mcmc list
+
+
+stan_trace(new_fit)
+
+
+```
+
+
+```{r}
+
+heidel.diag(new_fit)
+
+
+```
+
+
+

@@ -1,0 +1,232 @@
+---
+title: "data visuals"
+format: pdf
+editor: source
+---
+
+```{r}
+# City-Scale Indicators of Public Health
+library(ggplot2)
+library(readxl)
+library(rstan)
+library(loo)
+library(reshape2)
+
+
+
+# options recommended by compiler
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+Read in data
+
+```{r}
+
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+explainers <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+
+continuous_explainers <- c("City Population", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+
+k = length(explainers)
+
+```
+
+```{r}
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, explainers, response)])
+
+# convert string entries to lowercase (for consistency)
+for (x in explainers) {
+  if (class(df[[x]]) == "character") {
+    df[[x]] <- tolower(df[[x]])
+  }
+}
+
+y <- df[[response]]
+n <- nrow(df)
+v<- var(y)
+```
+
+```{r}
+
+# indicator variables
+city_types <- c("center city", 'small rural', 'suburban city')
+population_trends <- c("plateau", "growing", "losing population")
+
+# city type (reference level = "center city")
+df['small rural'] <- (df[['City Type']] == "small rural") + 0 # small rural
+df['suburban city'] <- (df[['City Type']] == "suburban city") + 0 # suburban city
+
+
+# population trend (reference level = "plateau")
+df['growing'] <- (df[["Population Trend*"]] == "growing") # growing
+df['shrinking'] <- (df[["Population Trend*"]] == "losing population") # losing population
+
+
+```
+
+```{r}
+
+
+points <- 1 + df[['small rural']] + 2*df[['suburban city']]
+colors <- 1 + df[['growing']] + 2*df[['shrinking']]
+
+
+plot(0,0)
+legend(-0.1,0.5, legend = c(city_types, population_trends), pch = c(1, 2, 3, 1, 1, 1), col = c(1,1,1,1,2,3))
+
+
+```
+
+```{r}
+
+y <- df[[response]]
+
+for (i in 1:length(continuous_explainers)) {
+  
+  x <- df[[continuous_explainers[i]]]
+  
+  
+  plot(x, y, pch = points, col = colors, xlab = continuous_explainers[i], ylab = response)
+  
+}
+
+
+```
+
+```{r}
+
+df_scale <- data.frame(df[continuous_explainers], check.names = FALSE)
+
+for (explai in continuous_explainers) {
+  xmin <- min(df_scale[[explai]])
+  xmax <- max(df_scale[[explai]])
+  
+  df_scale[[explai]] <- (df_scale[[explai]] - xmin)/(xmax - xmin)
+}
+
+
+covv <- cov(df_scale)
+
+melted_covv <-  melt(covv)
+
+
+#options(repr.plot.height = 20)
+ggplot(data = melted_covv, aes(Var1, Var2, fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0) + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, 
+    size = 12, hjust = 1))
+
+
+
+```
+
+```{r}
+
+no_response <- TRUE
+
+if (no_response) {
+  cormat <- cor(df[continuous_explainers])
+  
+  melted_cor <-  melt(cormat)
+  
+  
+  #options(repr.plot.height = 20)
+  ggplot(data = melted_cor, aes(Var1, Var2, fill = value)) + geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+     midpoint = 0) + 
+    theme(axis.text.x = element_text(angle = 30, vjust = 1, 
+      size = 12, hjust = 1))
+
+} else {
+  
+  cormat <- cor(df[c(response, continuous_explainers)])
+  
+  melted_cor <-  melt(cormat)
+  
+  
+  #options(repr.plot.height = 20)
+  ggplot(data = melted_cor, aes(Var1, Var2, fill = value)) + geom_tile() + 
+    scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+     midpoint = 0) + 
+    theme(axis.text.x = element_text(angle = 30, vjust = 1, 
+      size = 10, hjust = 1))
+  }
+
+
+
+```
+
+```{r}
+
+for (i in 1:length(continuous_explainers)) {
+
+  expl <- continuous_explainers[i]
+
+  x <- df[[expl]]
+  
+  print(expl)
+  print(c(mean(x), sd(x)))
+}
+
+
+```
+
+
+```{r}
+
+
+best_explainers <- c("Total Unemployment (%)", "Housing with potential lead risk", 
+                "Air pollution", "Percent renter", "Walkability Score")
+
+cormat <- cor(df[best_explainers])
+
+melted_cor <-  melt(cormat)
+
+
+#options(repr.plot.height = 20)
+ggplot(data = melted_cor, aes(Var1, Var2, fill = value)) + geom_tile() + 
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0) + 
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, 
+    size = 12, hjust = 1))
+
+
+
+```
+
+
+```{r}
+
+
+print(cormat)
+
+```
+

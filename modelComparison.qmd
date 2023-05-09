@@ -1,0 +1,147 @@
+---
+title: "model 3"
+format: pdf
+editor: source
+---
+
+# Model comparison - comparing models 3 and 4
+
+model 3 without healthy food
+
+```{r}
+# City-Scale Indicators of Public Health
+library(ggplot2)
+library(readxl)
+library(rstan)
+library(loo)
+library(rstanarm)
+library(reshape2)
+
+# options recommended by compiler
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+Read and clean data
+
+```{r}
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+# index model 3 to be consistent with model 4
+idx <- c(1,3,4,5,6,7)
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+columns <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+all_explainers <- c("Total Unemployment (%)", "Limited Access to Healthy Foods", 
+                "Housing with potential lead risk", "Air pollution", "Percent renter", 
+                "Walkability Score")
+
+best_explainers <- c("Total Unemployment (%)", "Housing with potential lead risk", 
+                "Air pollution", "Percent renter", "Walkability Score")
+
+```
+
+```{r}
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, columns, response)])
+
+# convert string entries to lowercase (for consistency)
+for (x in columns) {
+  if (class(df[[x]]) == "character") {
+    df[[x]] <- tolower(df[[x]])
+  }
+}
+
+y <- df[[response]]
+n <- nrow(df)
+v <- var(y)
+
+
+
+```
+
+
+```{r}
+
+file4 <- "best_fit_4_mixed.rda"
+file3 <- "best_fit_3_mixed.rda"
+
+load(file = file3)
+
+lin_fit3 <- lin_fit
+
+load(file = file4)
+
+lin_fit4 <- lin_fit
+
+
+```
+
+
+
+
+```{r}
+
+summary(lin_fit3, pars = c("sigmasq", "Rbsq"))$summary[,c("mean", "sd", "2.5%", "97.5%")]
+
+```
+
+
+```{r}
+
+summary(lin_fit4, pars = c("sigmasq", "Rbsq"))$summary[,c("mean", "sd", "2.5%", "97.5%")]
+
+```
+
+
+
+```{r}
+
+beta3 <- summary(lin_fit3, pars = "beta")$summary[,"mean"]
+names(beta3) <- all_explainers
+beta4 <- summary(lin_fit4, pars = "beta")$summary[,"mean"]
+names(beta4) <- best_explainers
+
+
+(diffs <- (beta3[idx] - beta4)/beta3[idx])
+
+
+```
+
+
+```{r}
+
+bb3 <- beta3[6] - beta3[2]
+bb4 <- beta4[5]
+
+(bb3 - bb4)/bb3
+
+```
+
+
+
+```{r}
+
+
+stan_dens(lin_fit4, pars = "Rbsq")
+
+
+```
+
+

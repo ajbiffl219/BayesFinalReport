@@ -1,0 +1,289 @@
+---
+title: "final"
+format: pdf
+editor: source
+---
+
+greedy model without healthy food
+
+```{r}
+# City-Scale Indicators of Public Health
+library(ggplot2)
+library(readxl)
+library(rstan)
+library(loo)
+library(rstanarm)
+library(reshape2)
+library(coda)
+
+# options recommended by compiler
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+Read and clean data
+
+```{r}
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+columns <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+
+explainers <- c("Total Unemployment (%)", "Housing with potential lead risk", 
+                "Air pollution", "Percent renter", "Walkability Score")
+
+```
+
+```{r}
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, columns, response)])
+
+# convert string entries to lowercase (for consistency)
+for (x in columns) {
+  if (class(df[[x]]) == "character") {
+    df[[x]] <- tolower(df[[x]])
+  }
+}
+
+y <- df[[response]]
+n <- nrow(df)
+v <- var(y)
+
+
+X <- c()
+
+for (col in explainers) {
+  X <- cbind(X, df[[col]])
+}
+
+X <- cbind(X, 1)
+
+```
+
+```{r}
+
+
+# arbitrary linear model
+lin_model = "
+data {
+  int<lower=1> n; // sample size
+  int<lower=1> k; // number of explanatory variables + 1
+  vector[n] y; // response
+  matrix[n,k] X; // explanatory variables
+  real<lower=0> v; // sample variance
+}
+parameters {
+  real<lower=0> sigmasq; // model variance
+  vector[k] beta; // coefficients
+}
+transformed parameters {
+  vector[n] mu; // means
+  mu = X*beta; 
+}
+model {
+  // priors
+  sigmasq ~ inv_gamma(0.01, 0.01);
+  for (i in 1:k) beta[i] ~ normal(0,100);
+  
+  // data distribution
+  for (i in 1:n) y[i] ~ normal(mu[i], sqrt(sigmasq));
+}
+generated quantities {
+  real Rbsq;
+  Rbsq =  1 - sigmasq / v;
+  vector[n] log_lik;
+  for (i in 1:n) log_lik[i] = normal_lpdf(y[i] | mu[i], sqrt(sigmasq));
+}
+"
+
+lin_data <- list(n = n, k = 1 + length(explainers), y = y, X = X, v = v)
+
+lin_mod <- stan_model(model_code = lin_model)
+
+all_fit_file <- "best_fit_4_mixed.rda"
+overwrite <- FALSE
+
+# number of iterations
+B <- 1e5
+
+if (overwrite || !file.exists(all_fit_file)) {
+  lin_fit <- sampling(lin_mod, data = lin_data, iter = B, warmup = B/2, chains = 4)
+  save(lin_fit, file = all_fit_file, compress = "xz")
+} else {
+  load(file = all_fit_file)
+}
+
+```
+
+```{r}
+
+summary(lin_fit, pars = c("beta", "sigmasq"))$summary[,"Rhat"]
+
+```
+
+```{r}
+
+stan_dens(lin_fit, pars = c("beta"))
+
+
+```
+
+```{r}
+
+
+summary(lin_fit, pars = "beta")$summary[,c("mean", "sd", "2.5%", "97.5%")]
+
+```
+
+
+```{r}
+mean(y)
+explainers
+
+```
+
+```{r}
+
+for (i in 1:length(explainers)) {
+  print(stan_dens(lin_fit, pars = paste("beta[", i+1,"]", sep = "")) + 
+                  ggtitle(explainers[i]))
+}
+
+```
+
+```{r}
+#| warning: false
+
+looic_lin <- loo(extract_log_lik(lin_fit))
+waic_lin <- waic(extract_log_lik(lin_fit))
+
+
+```
+
+```{r}
+# LOOIC
+print(looic_lin$estimates[3])
+```
+
+```{r}
+# WAIC
+print(waic_lin$estimates[3])
+
+```
+
+
+
+```{r}
+
+summary(lin_fit, pars = c("beta", "sigmasq"))$summary[,c("mean", "sd", "2.5%", "97.5%")]
+
+
+```
+
+
+```{r}
+
+stan_dens(lin_fit, pars = "Rbsq")
+
+```
+
+
+```{r}
+
+# indicator variables
+city_types <- c("center city", 'small rural', 'suburban city')
+population_trends <- c("plateau", "growing", "losing population")
+
+# city type (reference level = "center city")
+df['small rural'] <- (df[['City Type']] == "small rural") + 0 # small rural
+df['suburban city'] <- (df[['City Type']] == "suburban city") + 0 # suburban city
+
+
+# population trend (reference level = "plateau")
+df['growing'] <- (df[["Population Trend*"]] == "growing") # growing
+df['shrinking'] <- (df[["Population Trend*"]] == "losing population") # losing population
+
+
+```
+
+```{r}
+
+
+points <- 1 + df[['small rural']] + 2*df[['suburban city']]
+colors <- 1 + df[['growing']] + 2*df[['shrinking']]
+
+
+plot(0,0)
+legend(-0.1,0.5, legend = c(city_types, population_trends), pch = c(1, 2, 3, 1, 1, 1), col = c(1,1,1,1,2,3))
+
+
+```
+
+```{r}
+
+
+
+y <- df[[response]]
+#x <- df[[continuous_explainers[i]]]
+mu <- summary(lin_fit, pars = 'mu')$summary[,"mean"]
+
+
+plot(mu, y, pch = points, col = colors, xlab = "fit lifetime (yr)", ylab = "true lifetime (yr)")
+  
+
+
+```
+
+
+```{r}
+
+hist(y, breaks = 10, main = '', xlab = 'Lifetime (yr)', ylab = 'Counts')
+
+```
+
+
+## Assess convergence
+
+
+
+```{r}
+
+stan_trace(lin_fit, pars = c("beta", "sigmasq", "mu[1]", "mu[2]", "mu[3]", "mu[4]", "mu[5]"))
+
+
+```
+
+
+
+```{r}
+
+lin_mcmc <- As.mcmc.list(lin_fit, pars = c("beta", "sigmasq"))
+
+```
+
+
+
+```{r}
+
+heidel.diag(lin_mcmc)
+
+```
+
+

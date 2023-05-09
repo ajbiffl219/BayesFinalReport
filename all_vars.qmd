@@ -1,0 +1,183 @@
+---
+title: "all_vars"
+format: pdf
+editor: source
+---
+
+# all_vars
+
+all explainers included
+
+```{r}
+# City-Scale Indicators of Public Health
+library(ggplot2)
+library(readxl)
+library(rstan)
+library(loo)
+
+
+# options recommended by compiler
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+```
+
+Read and clean data
+
+```{r}
+
+raw_df <- read_excel("./data.xlsx", sheet = "City data", skip = 1, 
+                     guess_max = 2, na = c('NA','-', 'Not available'), 
+                     n_max = 71)
+
+
+# data categories
+response <- "Life Expectancy"
+identifiers <- "City"
+
+explainers <- c("City Type", "City Population", "Population Trend*", 
+                "Share Below 100% of the FPL", "Total Unemployment (%)", 
+                "Percent renter", "Housing with potential lead risk", 
+                "Park Access", "Walkability Score", 
+                "Limited Access to Healthy Foods", "Air pollution", 
+                "Drinking water violations")
+
+```
+
+```{r}
+
+# clean data
+
+# select columns and rows
+df <- na.omit(raw_df[c(identifiers, explainers, response)])
+
+# convert string entries to lowercase (for consistency)
+for (x in explainers) {
+  if (class(df[[x]]) == "character") {
+    df[[x]] <- tolower(df[[x]])
+  }
+}
+
+y <- df[[response]]
+n <- nrow(df)
+v<- var(y)
+```
+
+Construct explanatory matrix
+
+```{r}
+
+columns <- c("City Population", 
+             "Share Below 100% of the FPL", "Total Unemployment (%)", 
+              "Percent renter", "Housing with potential lead risk", 
+              "Park Access", "Walkability Score", 
+              "Limited Access to Healthy Foods", "Air pollution", 
+              "Drinking water violations")
+
+X <- rep(1, n)
+
+for (col in columns) {
+  X <- cbind(X, df[[col]])
+}
+
+```
+
+```{r}
+
+
+# arbitrary linear model
+lin_model = "
+data {
+  int<lower=1> n; // sample size
+  int<lower=1> k; // number of explanatory variables + 1
+  vector[n] y; // response
+  matrix[n,k] X; // explanatory variables
+  real<lower=0> v; // sample variance
+}
+parameters {
+  real<lower=0> sigmasq; // model variance
+  vector[k] beta; // coefficients
+}
+transformed parameters {
+  vector[n] mu; // means
+  mu = X*beta; 
+}
+model {
+  // priors
+  sigmasq ~ inv_gamma(0.01, 0.01);
+  for (i in 1:k) beta[i] ~ normal(0,100);
+  
+  // data distribution
+  for (i in 1:n) y[i] ~ normal(mu[i], sqrt(sigmasq));
+}
+generated quantities {
+  real Rbsq;
+  Rbsq =  1 - sigmasq / v;
+  vector[n] log_lik;
+  for (i in 1:n) log_lik[i] = normal_lpdf(y[i] | mu[i], sqrt(sigmasq));
+}
+"
+
+lin_data <- list(n = n, k = 1 + length(columns), y = y, X = X, v = v)
+
+lin_mod <- stan_model(model_code = lin_model)
+
+all_fit_file <- "all_continuous_fit.rda"
+overwrite <- TRUE
+
+if (overwrite || !file.exists(all_fit_file)) {
+  lin_fit <- sampling(lin_mod, data = lin_data, iter = 1e5, warmup = 5e4, chains = 4)
+  save(lin_fit, file = all_fit_file, compress = "xz")
+} else {
+  load(file = all_fit_file)
+}
+
+```
+
+```{r}
+
+summary(lin_fit, pars = c("beta", "sigmasq"))$summary[,"Rhat"]
+
+```
+
+```{r}
+
+stan_dens(lin_fit, pars = c("beta", "sigmasq"))
+
+
+```
+
+```{r}
+mean(y)
+columns
+
+```
+
+```{r}
+
+for (i in 1:length(columns)) {
+  print(stan_dens(lin_fit, pars = paste("beta[", i+1,"]", sep = "")) + 
+                  ggtitle(columns[i]))
+}
+
+```
+
+```{r}
+#| warning: false
+
+looic_lin <- loo(extract_log_lik(lin_fit))
+waic_lin <- waic(extract_log_lik(lin_fit))
+
+
+```
+
+```{r}
+# LOOIC
+print(looic_lin$estimates[3])
+```
+
+```{r}
+# WAIC
+print(waic_lin$estimates[3])
+
+```

@@ -1,0 +1,58 @@
+This folder contains the code files used in this project, as well as the data 
+spreadsheet from the Urban Data Catalog
+
+
+======================================================
+
+Files:
+
+
+* all_vars.qmd -- "all vars" normal Stan model
+
+
+* convergence_rstanarm.qmd -- checking convergence of typical rstanarm model
+                              used in model_building.qmd
+
+
+* data_visual.qmd -- scatter plots and correlation plots of data
+
+
+* data.xlsx -- spreadsheet of city data
+
+
+* final_means.qmd -- repeating final model with different prior means
+
+
+* final_predictive.qmd -- replicating data with final model predictions and 
+                          my attempt at an effect-ish plot
+
+
+* final_vars.qmd -- repeating final model with different prior variances
+
+
+* final.qmd -- final model (and convergence tests)
+
+
+* greedy.qmd -- greedy model
+
+
+* modelComparison -- comparing greedy and final models
+
+
+* model_building.qmd -- notebook for performing greedy search algorithm
+
+
+* proposal.qmd -- original proposal notebook (includes plots of distributions
+                    for all variables)
+
+
+=================================================================
+
+Note most of these files are configured to save rda files to the same folder, 
+but these weren't included as many of them are quite large
+
+
+Note also that originally, the all vars, greedy and final models were referred 
+to as model2, model3, and model4, respectively. I think I've removed all 
+references to the old naming system, but some may have made it through.
+
